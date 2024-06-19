@@ -212,11 +212,7 @@ impl Emu {
             }
             (8, x, _y, 6) => {
                 // Vx >>= 1.
-                if 0x1 & self.reg(x) == 1 {
-                    self.regs[0xF] = 1;
-                } else {
-                    self.regs[0xF] = 0;
-                }
+                self.regs[0xF] = self.reg(x) & 1;
                 self.regs[x as usize] = self.reg(x) >> 1;
             }
             (8, x, y, 7) => {
@@ -225,11 +221,7 @@ impl Emu {
             }
             (8, x, _y, 0xE) => {
                 // Vx <<= 1.
-                if 0b1000_0000 & self.reg(x) == 1 {
-                    self.regs[0xF] = 1;
-                } else {
-                    self.regs[0xF] = 0;
-                }
+                self.regs[0xF] = self.reg(x) >> 7 & 1;
                 self.regs[x as usize] = self.reg(x) << 1;
             }
             (9, x, y, 0) => {
