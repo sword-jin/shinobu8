@@ -1,7 +1,4 @@
-use std::{
-    fmt::Debug,
-    sync::Mutex,
-};
+use std::{fmt::Debug, ops::Add, sync::Mutex};
 
 pub const SCREEN_WIDTH: usize = 64;
 pub const SCREEN_HEIGHT: usize = 32;
@@ -19,7 +16,6 @@ pub struct Emu {
     dt: u8,
     st: u8,
 
-    steps: Mutex<u64>,
     quit: Mutex<bool>,
     _priv: (),
 }
@@ -87,8 +83,12 @@ impl Emu {
         &self.display
     }
 
-    pub fn key_down(&mut self, key: u8) {
+    pub fn key_press(&mut self, key: u8) {
         self.keys[key as usize] = true;
+    }
+
+    pub fn key_release(&mut self, key: u8) {
+        self.keys[key as usize] = false;
     }
 
     pub fn quit(&mut self) {
@@ -96,28 +96,17 @@ impl Emu {
         *quit = true;
     }
 
-    pub fn get_steps(&self) -> u64 {
-        *self.steps.lock().unwrap()
-    }
-
-    pub fn run(&mut self) -> anyhow::Result<()> {
-        loop {
-            {
-                let quit = *self.quit.lock().unwrap();
-                if quit {
-                    break;
-                }
-            }
-
+    pub fn cycle(&mut self) -> anyhow::Result<()> {
+        for _ in 0..8 {
             self.step()?;
         }
+        self.update_times();
         Ok(())
     }
 
     pub fn step(&mut self) -> anyhow::Result<()> {
         let instr = self.fetch();
         self.execute(instr)?;
-        *self.steps.lock().unwrap() += 1;
         Ok(())
     }
 
@@ -128,6 +117,15 @@ impl Emu {
 
     fn jump_next(&mut self) {
         self.pc += 2;
+    }
+
+    fn update_times(&mut self) {
+        if self.dt > 0 {
+            self.dt -= 1;
+        }
+        if self.st > 0 {
+            self.st -= 1;
+        }
     }
 
     fn execute(&mut self, ins: Instruction) -> anyhow::Result<()> {
@@ -172,7 +170,7 @@ impl Emu {
                 self.regs[x as usize] = ins.kk();
             }
             (7, x, _, _) => {
-                self.regs[x as usize] += ins.kk();
+                self.regs[x as usize] = self.reg(x).wrapping_add(ins.kk());
             }
             (8, x, y, 0) => {
                 // Vx = Vy.
@@ -285,18 +283,16 @@ impl Emu {
             (0xF, x, 0, 0xA) => {
                 // Wait for a key press, store the value of the key in Vx.
                 // All execution stops until a key is pressed, then the value of that key is stored in Vx.
-                loop {
-                    let mut pressed = false;
-                    for (i, key) in self.keys.iter().enumerate() {
-                        if *key {
-                            self.regs[x as usize] = i as u8;
-                            pressed = true;
-                            break;
-                        }
-                    }
-                    if pressed {
+                let mut pressed = false;
+                for (i, key) in self.keys.iter().enumerate() {
+                    if *key {
+                        self.regs[x as usize] = i as u8;
+                        pressed = true;
                         break;
                     }
+                }
+                if !pressed {
+                    self.pc -= 2;
                 }
             }
             (0xF, x, 1, 5) => {
@@ -306,7 +302,7 @@ impl Emu {
                 self.st = self.reg(x);
             }
             (0xF, x, 1, 0xE) => {
-                self.r_i += self.reg(x) as u16;
+                self.r_i = self.r_i.wrapping_add(self.reg(x) as u16);
             }
             (0xF, x, 2, 9) => {
                 // The value of I is set to the location for the hexadecimal sprite corresponding to the value of Vx
@@ -411,7 +407,6 @@ impl Default for Emu {
             dt: 0,
             st: 0,
             quit: Mutex::new(false),
-            steps: Mutex::new(0),
             _priv: (),
         }
     }
@@ -425,10 +420,9 @@ mod tests {
     fn test_pong2() -> anyhow::Result<()> {
         let mut emu = Emu::new();
         emu.load(include_bytes!("../../roms/PONG2"));
-        for _i in 0..10000 {
+        for _i in 0..1000000 {
             emu.step()?;
         }
-        assert_eq!(10000, emu.get_steps());
         Ok(())
     }
 
@@ -436,10 +430,9 @@ mod tests {
     fn test_15puzzle() -> anyhow::Result<()> {
         let mut emu = Emu::new();
         emu.load(include_bytes!("../../roms/15PUZZLE"));
-        for _i in 0..10000 {
+        for _i in 0..1000000 {
             emu.step()?;
         }
-        assert_eq!(10000, emu.get_steps());
         Ok(())
     }
 }

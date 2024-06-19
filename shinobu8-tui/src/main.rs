@@ -1,16 +1,21 @@
 use clap::Parser;
 use crossterm::{
-    event::{poll, read, Event, KeyCode},
+    execute,
+    event::{
+        poll, 
+        read, 
+        Event, 
+        KeyCode, 
+        KeyEventKind,
+        PopKeyboardEnhancementFlags,
+    },
     terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen},
     ExecutableCommand,
 };
-use ratatui::{prelude::*};
+use ratatui::prelude::*;
 use shinobu8_core::*;
-use std::io::Stdout;
 use std::time::Duration;
-use std::time::Instant;
-
-const FRAME_DURATION: Duration = Duration::from_millis(1000 / 60); // ~16.67 milliseconds
+use std::{io::Stdout, thread};
 
 #[derive(Parser)]
 struct Args {
@@ -25,6 +30,11 @@ fn is_event_available() -> std::io::Result<bool> {
 }
 
 fn main() {
+    execute!(
+        std::io::stdout(),
+        PopKeyboardEnhancementFlags,
+    ).expect("Failed to pop keyboard enhancement flags.");
+
     let args = Args::parse();
     if args.rom.is_empty() {
         println!("Please provide a ROM file.");
@@ -40,7 +50,6 @@ fn main() {
     let mut emu = Emu::new();
     emu.load(&rom);
 
-    let mut last_draw = Instant::now();
     loop {
         if is_event_available().expect("Failed to poll event.") {
             let event = read().unwrap();
@@ -54,26 +63,25 @@ fn main() {
                             .unwrap();
                         break;
                     }
-                    _ => if let Some(key) = to_chip8_key(event.code) { 
-                        emu.key_down(key)
-                     },
+                    _ => {
+                        if let Some(key) = to_chip8_key(event.code) {
+                            match event.kind {
+                                KeyEventKind::Press => emu.key_press(key),
+                                KeyEventKind::Release => emu.key_release(key),
+                                KeyEventKind::Repeat => {}
+                            }
+                        }
+                    }
                 },
                 _ => {}
             }
         }
 
-        let now = Instant::now();
+        emu.cycle().expect("Failed to execute instruction.");
 
-        emu.step().expect("Failed to execute instruction.");
+        let matrix = emu.get_diaplay();
 
-        if now.duration_since(last_draw) >= FRAME_DURATION {
-            last_draw = now;
-            let matrix = emu.get_diaplay();
-
-            draw(&mut terminal, matrix);
-        }
-
-        std::thread::sleep(Duration::from_millis(1));
+        draw(&mut terminal, matrix);
     }
 }
 
@@ -81,12 +89,14 @@ fn draw(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     matrix: &[bool; SCREEN_WIDTH * SCREEN_HEIGHT],
 ) {
-    terminal.draw(|f| {
-        f.render_widget(
-            Game::new(matrix),
-            Rect::new(0, 0, SCREEN_WIDTH as u16, SCREEN_HEIGHT as u16),
-        );
-    }).expect("Failed to draw.");
+    terminal
+        .draw(|f| {
+            f.render_widget(
+                Game::new(matrix),
+                Rect::new(0, 0, SCREEN_WIDTH as u16, SCREEN_HEIGHT as u16),
+            );
+        })
+        .expect("Failed to draw.");
 }
 
 struct Game<'a>(&'a [bool; SCREEN_WIDTH * SCREEN_HEIGHT]);
@@ -121,14 +131,17 @@ fn to_chip8_key(key: KeyCode) -> Option<u8> {
         KeyCode::Char('2') => Some(0x2),
         KeyCode::Char('3') => Some(0x3),
         KeyCode::Char('4') => Some(0xC),
+
         KeyCode::Char('q') => Some(0x4),
         KeyCode::Char('w') => Some(0x5),
         KeyCode::Char('e') => Some(0x6),
         KeyCode::Char('r') => Some(0xD),
+
         KeyCode::Char('a') => Some(0x7),
         KeyCode::Char('s') => Some(0x8),
         KeyCode::Char('d') => Some(0x9),
         KeyCode::Char('f') => Some(0xE),
+
         KeyCode::Char('z') => Some(0xA),
         KeyCode::Char('x') => Some(0x0),
         KeyCode::Char('c') => Some(0xB),
