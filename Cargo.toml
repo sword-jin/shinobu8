@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "shinobu8-core",
+    "shinobu8-tui",
+]
+resolver = "2"
