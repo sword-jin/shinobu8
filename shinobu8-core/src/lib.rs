@@ -87,6 +87,14 @@ impl Emu {
         self.keys[key as usize] = true;
     }
 
+    // Reset all keys, in linux server, can't get key release event,
+    // so we need to reset all keys before call key_press.
+    pub fn reset_keypad(&mut self) {
+        for i in 0..16 {
+            self.keys[i] = false;
+        }
+    }
+
     pub fn key_release(&mut self, key: u8) {
         self.keys[key as usize] = false;
     }

@@ -1,13 +1,11 @@
 use clap::Parser;
 use crossterm::{
-    execute,
     event::{
         poll, 
         read, 
         Event, 
         KeyCode, 
         KeyEventKind,
-        PopKeyboardEnhancementFlags,
     },
     terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen},
     ExecutableCommand,
@@ -15,7 +13,7 @@ use crossterm::{
 use ratatui::prelude::*;
 use shinobu8_core::*;
 use std::time::Duration;
-use std::{io::Stdout, thread};
+use std::io::Stdout;
 
 #[derive(Parser)]
 struct Args {
@@ -23,18 +21,7 @@ struct Args {
     rom: String,
 }
 
-fn is_event_available() -> std::io::Result<bool> {
-    // Zero duration says that the `poll` function must return immediately
-    // with an `Event` availability information
-    poll(Duration::from_secs(0))
-}
-
 fn main() {
-    execute!(
-        std::io::stdout(),
-        PopKeyboardEnhancementFlags,
-    ).expect("Failed to pop keyboard enhancement flags.");
-
     let args = Args::parse();
     if args.rom.is_empty() {
         println!("Please provide a ROM file.");
@@ -51,7 +38,7 @@ fn main() {
     emu.load(&rom);
 
     loop {
-        if is_event_available().expect("Failed to poll event.") {
+        if poll(Duration::from_secs(0)).expect("Failed to poll event.") {
             let event = read().unwrap();
             match event {
                 Event::Key(event) => match event.code {
@@ -66,7 +53,10 @@ fn main() {
                     _ => {
                         if let Some(key) = to_chip8_key(event.code) {
                             match event.kind {
-                                KeyEventKind::Press => emu.key_press(key),
+                                KeyEventKind::Press => {
+                                    emu.reset_keypad();
+                                    emu.key_press(key)
+                                }
                                 KeyEventKind::Release => emu.key_release(key),
                                 KeyEventKind::Repeat => {}
                             }
